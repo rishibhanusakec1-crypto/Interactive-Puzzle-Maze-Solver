@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Interactive Puzzle &amp; Maze Solver</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f6f7fb;--card:#fff;--tx:#1b2330;--mut:#5d6878;--bd:#d5dae3;--wall:#2b3446;--open:#fff;--path:#4a8cf7;--dead:#f2a1a1;--fin:#f5b301;--s:#2fb36b;--g:#ee7a2c;--acc:#2f5fd0;--given:#e8ecf5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10141c;--card:#1a202c;--tx:#e8ecf3;--mut:#99a4b5;--bd:#333c4d;--wall:#8e9ab0;--open:#232b3a;--path:#4a8cf7;--dead:#7a3a3a;--given:#2a3345;--acc:#6f9bff}}
+:root[data-theme="dark"]{--bg:#10141c;--card:#1a202c;--tx:#e8ecf3;--mut:#99a4b5;--bd:#333c4d;--wall:#8e9ab0;--open:#232b3a;--dead:#7a3a3a;--given:#2a3345;--acc:#6f9bff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:14px}
+h1{font-size:19px;margin:4px 0 2px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:10px}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs button{flex:1}
+button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+button.go{background:var(--s);color:#fff;border-color:var(--s);font-weight:600}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center}
+.row label{font-size:13px;color:var(--mut)}
+canvas{width:100%;display:block;border:1px solid var(--bd);border-radius:8px;touch-action:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px}
+.stats div{background:var(--bg);border-radius:8px;padding:6px 2px;font-size:12px;color:var(--mut)}
+.stats b{display:block;font-size:17px;color:var(--tx)}
+.msg{margin-top:8px;font-weight:600;min-height:20px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--mut);margin-top:6px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.hide{display:none}
+input[type=range]{flex:1;min-width:90px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Interactive Puzzle &amp; Maze Solver</h1>
+<div class="sub">Backtracking + DFS · Raj Katariya (22), Parth Katarmal (23), Rishi Bhanu (5) · DSA Microproject</div>
+<div class="tabs"><button id="tM" class="on">Maze</button><button id="tS">Sudoku</button></div>
+
+<div id="pM">
+<div class="card">
+<div class="row">
+<button id="mWall" class="on">Wall</button><button id="mStart">Start</button><button id="mGoal">Goal</button>
+<button id="bRand">Random</button><button id="bClear">Clear</button>
+</div>
+<canvas id="cv"></canvas>
+<div class="legend"><span><i style="background:var(--s)"></i>Start</span><span><i style="background:var(--g)"></i>Goal</span><span><i style="background:var(--path)"></i>Current path</span><span><i style="background:var(--dead)"></i>Backtracked</span><span><i style="background:var(--fin)"></i>Solution</span></div>
+</div>
+<div class="card">
+<div class="row"><button id="bSolve" class="go">▶ Solve</button><button id="bStop">Stop</button>
+<label><input type="checkbox" id="prune" checked> Pruned (keep dead ends)</label></div>
+<div class="row"><label>Speed</label><input type="range" id="spd" min="1" max="60" value="8"></div>
+<div class="stats"><div><b id="sC">0</b>calls</div><div><b id="sB">0</b>backtracks</div><div><b id="sD">0</b>depth</div><div><b id="sL">–</b>path length</div></div>
+<div class="msg" id="msg">Draw walls by tapping or dragging, then press Solve.</div>
+</div>
+</div>
+
+<div id="pS" class="hide">
+<div class="card">
+<canvas id="sv"></canvas>
+<div class="row" style="margin-top:8px"><button id="sSolve" class="go">▶ Solve</button><button id="sStop">Stop</button><button id="sReset">Reset puzzle</button></div>
+<div class="row"><label>Speed</label><input type="range" id="sSpd" min="1" max="200" value="40"></div>
+<div class="stats" style="grid-template-columns:repeat(2,1fr)"><div><b id="uP">0</b>placements</div><div><b id="uB">0</b>backtracks</div></div>
+<div class="msg" id="smsg">Given digits are shaded. Press Solve to watch backtracking.</div>
+</div>
+</div>
+</div>
+
+<script>
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var cs=getComputedStyle(document.documentElement);
+function col(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+
+/* ---------- tabs ---------- */
+$("tM").onclick=function(){show(true)};$("tS").onclick=function(){show(false)};
+function show(m){$("pM").classList.toggle("hide",!m);$("pS").classList.toggle("hide",m);$("tM").classList.toggle("on",m);$("tS").classList.toggle("on",!m);stopAll();m?drawM():drawS()}
+
+/* ---------- MAZE ---------- */
+var N=12,grid,st,start=[0,0],goal=[N-1,N-1],path=[],finalPath=null,mode="wall",timer=null,stat={c:0,b:0,d:0},lim=0;
+var cv=$("cv"),cx=cv.getContext("2d");
+var DIRS=[[1,0],[0,1],[-1,0],[0,-1]];
+function newGrid(){grid=[];st=[];for(var r=0;r<N;r++){grid.push(new Array(N).fill(0));st.push(new Array(N).fill(0))}}
+newGrid();
+function resetState(){for(var r=0;r<N;r++)for(var c=0;c<N;c++)st[r][c]=0;path=[];finalPath=null;stat={c:0,b:0,d:0};upStats("–")}
+function upStats(l){$("sC").textContent=stat.c;$("sB").textContent=stat.b;$("sD").textContent=stat.d;$("sL").textContent=l}
+function sizeCv(c){var w=Math.min(c.parentElement.clientWidth-2,540);c.width=w*2;c.height=w*2;c.style.height=w+"px"}
+function drawM(){sizeCv(cv);var s=cv.width/N;cx.clearRect(0,0,cv.width,cv.height);
+ for(var r=0;r<N;r++)for(var c=0;c<N;c++){var f=col("--open");
+  if(grid[r][c])f=col("--wall");else if(st[r][c]==1)f=col("--path");else if(st[r][c]==2)f=col("--dead");
+  cx.fillStyle=f;cx.fillRect(c*s,r*s,s,s);cx.strokeStyle=col("--bd");cx.lineWidth=1;cx.strokeRect(c*s,r*s,s,s)}
+ if(finalPath){cx.fillStyle=col("--fin");finalPath.forEach(function(p){cx.fillRect(p[1]*s+2,p[0]*s+2,s-4,s-4)})}
+ mark(start,col("--s"),"S",s);mark(goal,col("--g"),"G",s)}
+function mark(p,f,t,s){cx.fillStyle=f;cx.fillRect(p[1]*s+3,p[0]*s+3,s-6,s-6);cx.fillStyle="#fff";cx.font="bold "+(s*0.55)+"px sans-serif";cx.textAlign="center";cx.textBaseline="middle";cx.fillText(t,p[1]*s+s/2,p[0]*s+s/2+1)}
+function setMode(m){mode=m;["Wall","Start","Goal"].forEach(function(x){$("m"+x).classList.toggle("on",x.toLowerCase()==m)})}
+$("mWall").onclick=function(){setMode("wall")};$("mStart").onclick=function(){setMode("start")};$("mGoal").onclick=function(){setMode("goal")};
+var drag=false,paint=1;
+function cell(e){var b=cv.getBoundingClientRect(),s=b.width/N;return[Math.min(N-1,Math.max(0,Math.floor((e.clientY-b.top)/s))),Math.min(N-1,Math.max(0,Math.floor((e.clientX-b.left)/s)))]}
+function edit(e,first){if(timer)return;var p=cell(e),r=p[0],c=p[1];
+ if(mode=="wall"){if((r==start[0]&&c==start[1])||(r==goal[0]&&c==goal[1]))return;if(first)paint=grid[r][c]?0:1;grid[r][c]=paint}
+ else if(mode=="start"&&!grid[r][c]){start=[r,c]}else if(mode=="goal"&&!grid[r][c]){goal=[r,c]}
+ resetState();drawM()}
+cv.addEventListener("pointerdown",function(e){drag=true;edit(e,true)});
+cv.addEventListener("pointermove",function(e){if(drag&&mode=="wall")edit(e,false)});
+window.addEventListener("pointerup",function(){drag=false});
+$("bClear").onclick=function(){stopAll();newGrid();resetState();$("msg").textContent="Grid cleared.";drawM()};
+$("bRand").onclick=function(){stopAll();newGrid();for(var r=0;r<N;r++)for(var c=0;c<N;c++)grid[r][c]=Math.random()<0.3?1:0;
+ grid[start[0]][start[1]]=0;grid[goal[0]][goal[1]]=0;resetState();$("msg").textContent="Random maze made.";drawM()};
+
+function safe(r,c){return r>=0&&r<N&&c>=0&&c<N&&!grid[r][c]&&st[r][c]==0}
+function* dfs(r,c,prune){stat.c++;st[r][c]=1;path.push([r,c]);if(path.length>stat.d)stat.d=path.length;yield;
+ if(r==goal[0]&&c==goal[1])return true;
+ for(var i=0;i<4;i++){var nr=r+DIRS[i][0],nc=c+DIRS[i][1];if(safe(nr,nc)){if(yield*dfs(nr,nc,prune))return true}}
+ path.pop();st[r][c]=prune?2:0;stat.b++;yield;return false}
+function stopAll(){if(timer){cancelAnimationFrame(timer);timer=null}if(sTimer){cancelAnimationFrame(sTimer);sTimer=null}}
+$("bStop").onclick=function(){stopAll();$("msg").textContent="Stopped."};
+$("bSolve").onclick=function(){stopAll();resetState();drawM();var prune=$("prune").checked,gen=dfs(start[0],start[1],prune),n=0;
+ $("msg").textContent="Searching…";
+ function tick(){var k=+$("spd").value,res;
+  for(var i=0;i<k;i++){res=gen.next();n++;if(res.done)break;if(!prune&&n>400000){timer=null;$("msg").textContent="Stopped after 400,000 steps – pure backtracking is exponential. Tick “Pruned” to solve it quickly.";upStats("–");drawM();return}}
+  upStats("–");
+  if(res.done){timer=null;if(res.value){finalPath=path.slice();upStats(finalPath.length);$("msg").textContent="Solved! Path of "+finalPath.length+" cells."}else $("msg").textContent="No solution exists – all paths exhausted.";drawM();return}
+  drawM();timer=requestAnimationFrame(tick)}
+ timer=requestAnimationFrame(tick)};
+
+/* ---------- SUDOKU ---------- */
+var P="530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+var sb,given,sTimer=null,su={p:0,b:0},sv=$("sv"),sx=sv.getContext("2d");
+function sLoad(){sb=[];given=[];for(var r=0;r<9;r++){sb.push([]);given.push([]);for(var c=0;c<9;c++){var v=+P[r*9+c];sb[r].push(v);given[r].push(v>0)}}su={p:0,b:0};$("uP").textContent=0;$("uB").textContent=0}
+sLoad();
+function drawS(){sizeCv(sv);var s=sv.width/9;sx.clearRect(0,0,sv.width,sv.height);
+ for(var r=0;r<9;r++)for(var c=0;c<9;c++){sx.fillStyle=given[r][c]?col("--given"):col("--open");sx.fillRect(c*s,r*s,s,s);
+  if(sb[r][c]){sx.fillStyle=given[r][c]?col("--tx"):col("--acc");sx.font=(given[r][c]?"bold ":"")+(s*0.55)+"px sans-serif";sx.textAlign="center";sx.textBaseline="middle";sx.fillText(sb[r][c],c*s+s/2,r*s+s/2+1)}}
+ for(var i=0;i<=9;i++){sx.strokeStyle=col(i%3?"--bd":"--tx");sx.lineWidth=i%3?1:3;sx.beginPath();sx.moveTo(i*s,0);sx.lineTo(i*s,sv.height);sx.moveTo(0,i*s);sx.lineTo(sv.width,i*s);sx.stroke()}}
+function ok(r,c,n){for(var i=0;i<9;i++)if(sb[r][i]==n||sb[i][c]==n)return false;var br=r-r%3,bc=c-c%3;for(var i=br;i<br+3;i++)for(var j=bc;j<bc+3;j++)if(sb[i][j]==n)return false;return true}
+function* ss(){for(var r=0;r<9;r++)for(var c=0;c<9;c++)if(!sb[r][c]){
+ for(var n=1;n<=9;n++)if(ok(r,c,n)){sb[r][c]=n;su.p++;yield;if(yield*ss())return true;sb[r][c]=0;su.b++;yield}
+ return false}return true}
+$("sReset").onclick=function(){stopAll();sLoad();$("smsg").textContent="Puzzle reset.";drawS()};
+$("sStop").onclick=function(){stopAll();$("smsg").textContent="Stopped."};
+$("sSolve").onclick=function(){stopAll();sLoad();var g=ss();$("smsg").textContent="Solving…";
+ function tick(){var k=+$("sSpd").value,res;for(var i=0;i<k;i++){res=g.next();if(res.done)break}
+  $("uP").textContent=su.p;$("uB").textContent=su.b;drawS();
+  if(res.done){sTimer=null;$("smsg").textContent=res.value?"Solved! Every digit placed by backtracking.":"No solution exists.";return}
+  sTimer=requestAnimationFrame(tick)}
+ sTimer=requestAnimationFrame(tick)};
+window.addEventListener("resize",function(){$("pM").classList.contains("hide")?drawS():drawM()});
+drawM();
+</script>
+</body>
+</html>
